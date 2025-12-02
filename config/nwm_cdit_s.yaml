@@ -25,7 +25,7 @@ len_traj_pred: 16
 image_size: 224
 datasets:
   nav2d1:
-    data_folder: /mnt/d/datasets/nav2d/dataset1
+    data_folder: /scratch/jjc9560/datasets/nav2d/dataset1
     train: data_splits/nav2d1/train/
     test: data_splits/nav2d1/test/
     goals_per_obs: 4
