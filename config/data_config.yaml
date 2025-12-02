@@ -16,3 +16,6 @@ go_stanford:
 
 sacson:
   metric_waypoint_spacing: 0.255
+
+nav2d1:
+  metric_waypoint_spacing: 0.01

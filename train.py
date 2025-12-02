@@ -8,6 +8,7 @@
 # NoMaD, GNM, ViNT: https://github.com/robodhruv/visualnav-transformer
 # --------------------------------------------------------
 
+from tqdm import tqdm
 from isolated_nwm_infer import model_forward_wrapper
 import torch
 # the first flag below was False when we tested this script but True makes A100 training a lot faster:
@@ -268,7 +269,7 @@ def main(args):
         sampler.set_epoch(epoch)
         logger.info(f"Beginning epoch {epoch}...")
 
-        for x, y, rel_t in loader:
+        for x, y, rel_t in tqdm(loader, desc=f'Epoch {epoch}'):
             x = x.to(device, non_blocking=True)
             y = y.to(device, non_blocking=True)
             rel_t = rel_t.to(device, non_blocking=True)
