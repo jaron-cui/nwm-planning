@@ -219,13 +219,14 @@ class VAE(nn.Module):
 
     # Decoder Architecture
     self.dec = Decoder(self.input_res, self.dec_block_str, self.dec_channel_str, bottleneck_channels, image_channels)
+    self.latent_scaling_factor = nn.Buffer(torch.ones(1))
 
   def encode(self, x):
-    mu, logvar = self.enc(x)
-    return mu, logvar
+    z = self.reparameterize(*self.enc(x))
+    return z.mul_(self.latent_scaling_factor)
 
   def decode(self, z):
-    return self.dec(z)
+    return self.dec(z / self.latent_scaling_factor)
 
   def reparameterize(self, mu, logvar):
     std = torch.exp(0.5 * logvar)
@@ -235,29 +236,24 @@ class VAE(nn.Module):
   def compute_kl(self, mu, logvar):
     return -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
 
-  def forward(self, z):
-    # Only sample during inference
-    decoder_out = self.decode(z)
-    return decoder_out
-
   def forward_recons(self, x):
     # For generating reconstructions during inference
-    mu, logvar = self.encode(x)
+    mu, logvar = self.enc(x)
     z = self.reparameterize(mu, logvar)
-    decoder_out = self.decode(z)
+    decoder_out = self.dec(z)
     return decoder_out
 
   def training_step(self, batch):
     x = batch
 
     # Encoder
-    mu, logvar = self.encode(x)
+    mu, logvar = self.enc(x)
 
     # Reparameterization Trick
     z = self.reparameterize(mu, logvar)
 
     # Decoder
-    decoder_out = self.decode(z)
+    decoder_out = self.dec(z)
 
     # Compute loss
     l1_loss = F.l1_loss(decoder_out, x, reduction="sum")
