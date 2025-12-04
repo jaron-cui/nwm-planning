@@ -70,16 +70,18 @@ class Nav2dDataset(Dataset):
         for i, action in enumerate(context_actions):
             state.act(action.numpy())
             image = state.render(self.resolution, egocentric=True, egocentric_camera_size=0.2).transpose(2, 0, 1)
+            image = image[0:1].repeat(3, 0)
             context_images[i] = torch.from_numpy(image)
 
         goal_images = torch.zeros((self.goal_count, 3, self.resolution, self.resolution))
         for i, action in enumerate(goal_actions):
-            state.act(action.numpy())
-            image = state.render(self.resolution, egocentric=True, egocentric_camera_size=0.2).transpose(2, 0, 1)
-            state.act(-action.numpy())  # undo action
+            temp_state = state.copy()
+            temp_state.act(action.numpy())
+            image = temp_state.render(self.resolution, egocentric=True, egocentric_camera_size=0.2).transpose(2, 0, 1)
+            image = image[0:1].repeat(3, 0)
             goal_images[i] = torch.from_numpy(image)
 
-        return context_images, goal_images, goal_actions
+        return context_images, goal_images, torch.cat((goal_actions, torch.zeros((self.goal_count, 1))), dim=-1)
 
 
 class BaseDataset(Dataset):

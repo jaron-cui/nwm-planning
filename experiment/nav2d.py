@@ -22,6 +22,18 @@ class Worldstate:
     ] for barrier in barriers], [])
     self.background_seed = background_seed
 
+  def copy(self) -> 'Worldstate':
+    new_state = Worldstate(np.zeros(()), [], 0)
+    new_state.position = self.position.copy()
+    new_state.barrier_width = self.barrier_width
+
+    # assumes barriers and barrier_endcaps are immutable
+    new_state.barriers = self.barriers
+    new_state.barrier_endcaps = self.barrier_endcaps
+
+    new_state.background_seed = self.background_seed
+    return new_state
+
   @staticmethod
   def random(
     barriers_per_dim_mean: float = 80.0,
