@@ -9,6 +9,7 @@
 # --------------------------------------------------------
 
 from tqdm import tqdm
+from experiment.vae import make_vae
 from isolated_nwm_infer import model_forward_wrapper
 import torch
 # the first flag below was False when we tested this script but True makes A100 training a lot faster:
@@ -36,7 +37,7 @@ from diffusers.models import AutoencoderKL
 from distributed import init_distributed
 from models import CDiT_models
 from diffusion import create_diffusion
-from datasets import TrainingDataset
+from datasets import Nav2dDataset, TrainingDataset
 from misc import transform
 
 #################################################################################
@@ -124,7 +125,9 @@ def main(args):
         logger = create_logger(None)
 
     # Create model:
-    tokenizer = AutoencoderKL.from_pretrained(f"stabilityai/sd-vae-ft-ema").to(device)
+    # tokenizer = AutoencoderKL.from_pretrained(f"stabilityai/sd-vae-ft-ema").to(device)
+    tokenizer = make_vae().to(device)
+    tokenizer.load_state_dict(torch.load('checkpoints/vae/check57.pt'))
     latent_size = config['image_size'] // 8
 
     assert config['image_size'] % 8 == 0, "Image size must be divisible by 8 (for the VAE encoder)."
@@ -186,55 +189,72 @@ def main(args):
     diffusion = create_diffusion(timestep_respacing="")  # default: 1000 steps, linear noise schedule
     logger.info(f"CDiT Parameters: {sum(p.numel() for p in model.parameters()):,}")
 
-    train_dataset = []
-    test_dataset = []
+    # train_dataset = []
+    # test_dataset = []
 
-    for dataset_name in config["datasets"]:
-        data_config = config["datasets"][dataset_name]
+    # for dataset_name in config["datasets"]:
+    #     data_config = config["datasets"][dataset_name]
 
-        for data_split_type in ["train", "test"]:
-            if data_split_type in data_config:
-                    goals_per_obs = int(data_config["goals_per_obs"])
-                    if data_split_type == 'test':
-                        goals_per_obs = 4 # standardize testing
+    #     for data_split_type in ["train", "test"]:
+    #         if data_split_type in data_config:
+    #                 goals_per_obs = int(data_config["goals_per_obs"])
+    #                 if data_split_type == 'test':
+    #                     goals_per_obs = 4 # standardize testing
                     
-                    if "distance" in data_config:
-                        min_dist_cat=data_config["distance"]["min_dist_cat"]
-                        max_dist_cat=data_config["distance"]["max_dist_cat"]
-                    else:
-                        min_dist_cat=config["distance"]["min_dist_cat"]
-                        max_dist_cat=config["distance"]["max_dist_cat"]
+    #                 if "distance" in data_config:
+    #                     min_dist_cat=data_config["distance"]["min_dist_cat"]
+    #                     max_dist_cat=data_config["distance"]["max_dist_cat"]
+    #                 else:
+    #                     min_dist_cat=config["distance"]["min_dist_cat"]
+    #                     max_dist_cat=config["distance"]["max_dist_cat"]
 
-                    if "len_traj_pred" in data_config:
-                        len_traj_pred=data_config["len_traj_pred"]
-                    else:
-                        len_traj_pred=config["len_traj_pred"]
+    #                 if "len_traj_pred" in data_config:
+    #                     len_traj_pred=data_config["len_traj_pred"]
+    #                 else:
+    #                     len_traj_pred=config["len_traj_pred"]
 
-                    dataset = TrainingDataset(
-                        data_folder=data_config["data_folder"],
-                        data_split_folder=data_config[data_split_type],
-                        dataset_name=dataset_name,
-                        image_size=config["image_size"],
-                        min_dist_cat=min_dist_cat,
-                        max_dist_cat=max_dist_cat,
-                        len_traj_pred=len_traj_pred,
-                        context_size=config["context_size"],
-                        normalize=config["normalize"],
-                        goals_per_obs=goals_per_obs,
-                        transform=transform,
-                        predefined_index=None,
-                        traj_stride=1,
-                    )
-                    if data_split_type == "train":
-                        train_dataset.append(dataset)
-                    else:
-                        test_dataset.append(dataset)
-                    print(f"Dataset: {dataset_name} ({data_split_type}), size: {len(dataset)}")
+    #                 dataset = TrainingDataset(
+    #                     data_folder=data_config["data_folder"],
+    #                     data_split_folder=data_config[data_split_type],
+    #                     dataset_name=dataset_name,
+    #                     image_size=config["image_size"],
+    #                     min_dist_cat=min_dist_cat,
+    #                     max_dist_cat=max_dist_cat,
+    #                     len_traj_pred=len_traj_pred,
+    #                     context_size=config["context_size"],
+    #                     normalize=config["normalize"],
+    #                     goals_per_obs=goals_per_obs,
+    #                     transform=transform,
+    #                     predefined_index=None,
+    #                     traj_stride=1,
+    #                 )
+    #                 if data_split_type == "train":
+    #                     train_dataset.append(dataset)
+    #                 else:
+    #                     test_dataset.append(dataset)
+    #                 print(f"Dataset: {dataset_name} ({data_split_type}), size: {len(dataset)}")
 
     # combine all the datasets from different robots
-    print(f"Combining {len(train_dataset)} datasets.")
-    train_dataset = ConcatDataset(train_dataset)
-    test_dataset = ConcatDataset(test_dataset)
+    # print(f"Combining {len(train_dataset)} datasets.")
+    # train_dataset = ConcatDataset(train_dataset)
+    # test_dataset = ConcatDataset(test_dataset)
+
+    train_dataset = Nav2dDataset(
+        size=1000,
+        resolution=config['image_size'],
+        context_size=config['context_size'],
+        goal_count=4,
+        max_step_distance=0.01,
+        max_angular_drift=torch.pi
+    )
+    test_dataset = Nav2dDataset(
+        size=100,
+        resolution=config['image_size'],
+        context_size=config['context_size'],
+        goal_count=4,
+        max_step_distance=0.01,
+        max_angular_drift=torch.pi
+    )
 
     sampler = DistributedSampler(
         train_dataset,
@@ -271,29 +291,32 @@ def main(args):
 
         # [...x_context, ...x_goals], xy action, relative timeskip
         # why not reformat to (x_context, x_goals, action)? we don't need timeskip currently because there are no environment dynamics
-        for x, y, rel_t in tqdm(loader, desc=f'Epoch {epoch}'):
-            x = x.to(device, non_blocking=True)
-            y = y.to(device, non_blocking=True)
-            rel_t = rel_t.to(device, non_blocking=True)
-            
+        for x_context, x_goals, actions in tqdm(loader, desc=f'Epoch {epoch}'):
+            x_context = x_context.to(device, non_blocking=True)
+            x_goals = x_goals.to(device, non_blocking=True)
+            actions = actions.to(device, non_blocking=True)
+            rel_t = torch.ones(actions.shape[:2]).to(device, non_blocking=True)
             with torch.amp.autocast('cuda', enabled=bfloat_enable, dtype=torch.bfloat16):
                 with torch.no_grad():
                     # Map input images to latent space + normalize latents:
+                    x = torch.cat((x_context, x_goals), dim=1).to(device)
                     B, T = x.shape[:2]
                     x = x.flatten(0,1)
-                    x = tokenizer.encode(x).latent_dist.sample().mul_(0.18215)
+                    x = tokenizer.encode(x)
                     x = x.unflatten(0, (B, T))
+                    x_context = x[:, :x_context.shape[1]]
+                    x_goals = x[:, x_context.shape[1]:]
                 
-                num_goals = T - num_cond
-                x_start = x[:, num_cond:].flatten(0, 1)
-                x_cond = x[:, :num_cond].unsqueeze(1).expand(B, num_goals, num_cond, x.shape[2], x.shape[3], x.shape[4]).flatten(0, 1)
-                y = y.flatten(0, 1)
+                num_goals = x_goals.shape[1]
+                x_goals = x_goals.flatten(0, 1)
+                x_context = x_context.unsqueeze(1).expand(B, num_goals, num_cond, x.shape[2], x.shape[3], x.shape[4]).flatten(0, 1)
+                actions = actions.flatten(0, 1)
                 rel_t = rel_t.flatten(0, 1)
                 
-                t = torch.randint(0, diffusion.num_timesteps, (x_start.shape[0],), device=device)
-                model_kwargs = dict(y=y, x_cond=x_cond, rel_t=rel_t)
+                t = torch.randint(0, diffusion.num_timesteps, (x_goals.shape[0],), device=device)
+                model_kwargs = dict(y=actions, x_cond=x_context, rel_t=rel_t)
                 # model, x_goals, diffusion_t, (action, x_context, relative_time)
-                loss_dict = diffusion.training_losses(model, x_start, t, model_kwargs)
+                loss_dict = diffusion.training_losses(model, x_goals, t, model_kwargs)
                 loss = loss_dict["loss"].mean()
 
             opt.zero_grad()
@@ -319,7 +342,7 @@ def main(args):
                 torch.cuda.synchronize()
                 end_time = time()
                 steps_per_sec = log_steps / (end_time - start_time)
-                samples_per_sec = dist.get_world_size()*x_cond.shape[0]*steps_per_sec
+                samples_per_sec = dist.get_world_size()*x_context.shape[0]*steps_per_sec
                 # Reduce loss history over all processes:
                 avg_loss = torch.tensor(running_loss / log_steps, device=device)
                 dist.all_reduce(avg_loss, op=dist.ReduceOp.SUM)
@@ -390,10 +413,11 @@ def evaluate(model, vae, diffusion, test_dataloaders, rank, batch_size, num_work
     n_samples = torch.tensor(0).to(device)
 
     # Run for 1 step
-    for x, y, rel_t in loader:
-        x = x.to(device)
-        y = y.to(device)
-        rel_t = rel_t.to(device).flatten(0, 1)
+    # for x, y, rel_t in loader:
+    for x_context, x_goals, actions in loader:
+        x = torch.cat((x_context, x_goals), dim=1).to(device)
+        y = actions.to(device)
+        rel_t = torch.ones_like(actions.shape[:2]).to(device).flatten(0, 1)
         with torch.amp.autocast('cuda', enabled=True, dtype=torch.bfloat16):
             B, T = x.shape[:2]
             num_goals = T - num_cond
