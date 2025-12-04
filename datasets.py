@@ -17,7 +17,70 @@ import yaml
 import pickle
 import tqdm
 from torch.utils.data import Dataset
+from experiment.nav2d import Worldstate
 from misc import angle_difference, get_data_path, get_delta_np, normalize_data, to_local_coords
+
+
+class Nav2dDataset(Dataset):
+    """
+    Randomly samples trajectories and actions in the Nav2d environment at indexing time.
+    """
+    def __init__(
+        self,
+        size: int,
+        resolution: int,
+        context_size: int,
+        goal_count: int,
+        max_step_distance: float,
+        max_angular_drift: float
+    ) -> None:
+        super().__init__()
+        self.size = size
+        self.resolution = resolution
+        self.context_size = context_size
+        self.goal_count = goal_count
+        self.max_step_distance = max_step_distance
+        self.max_angular_drift = max_angular_drift
+
+    def __len__(self):
+        return self.size
+    
+    def __getitem__(self, index: int) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Randomly samples trajectories and actions in the Nav2d environment.
+        
+        :return: (context_images, goal_images, actions) with shapes (context_size, 3, res, res), (goal_count, 3, res, res), and (goal_count,).
+        """
+        if index >= self.size:
+            raise IndexError()
+        
+        angular_drift = 2 * (torch.rand(self.context_size) - 0.5) * self.max_angular_drift
+        context_action_directions = 2 * torch.pi * torch.rand(1) + angular_drift.cumsum(0)
+        context_action_distances = self.max_step_distance * torch.rand(self.context_size)
+        context_actions = context_action_distances.unsqueeze(1) * torch.stack(
+            (context_action_directions.cos(), context_action_directions.sin()), dim=1)
+        
+        goal_action_directions = 2 * (torch.rand(self.goal_count) - 0.5) * self.max_angular_drift + context_action_directions[-1]
+        goal_action_distances = self.max_step_distance * torch.rand(self.goal_count)
+        goal_actions = goal_action_distances.unsqueeze(1) * torch.stack(
+            (goal_action_directions.cos(), goal_action_directions.sin()), dim=1)
+
+        context_images = torch.zeros((self.context_size, 3, self.resolution, self.resolution))
+        state = Worldstate.random()
+        for i, action in enumerate(context_actions):
+            state.act(action.numpy())
+            image = state.render(self.resolution, egocentric=True, egocentric_camera_size=0.2).transpose(2, 0, 1)
+            context_images[i] = torch.from_numpy(image)
+
+        goal_images = torch.zeros((self.goal_count, 3, self.resolution, self.resolution))
+        for i, action in enumerate(goal_actions):
+            state.act(action.numpy())
+            image = state.render(self.resolution, egocentric=True, egocentric_camera_size=0.2).transpose(2, 0, 1)
+            state.act(-action.numpy())  # undo action
+            goal_images[i] = torch.from_numpy(image)
+
+        return context_images, goal_images, goal_actions
+
 
 class BaseDataset(Dataset):
     def __init__(

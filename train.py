@@ -269,6 +269,8 @@ def main(args):
         sampler.set_epoch(epoch)
         logger.info(f"Beginning epoch {epoch}...")
 
+        # [...x_context, ...x_goals], xy action, relative timeskip
+        # why not reformat to (x_context, x_goals, action)? we don't need timeskip currently because there are no environment dynamics
         for x, y, rel_t in tqdm(loader, desc=f'Epoch {epoch}'):
             x = x.to(device, non_blocking=True)
             y = y.to(device, non_blocking=True)
@@ -290,6 +292,7 @@ def main(args):
                 
                 t = torch.randint(0, diffusion.num_timesteps, (x_start.shape[0],), device=device)
                 model_kwargs = dict(y=y, x_cond=x_cond, rel_t=rel_t)
+                # model, x_goals, diffusion_t, (action, x_context, relative_time)
                 loss_dict = diffusion.training_losses(model, x_start, t, model_kwargs)
                 loss = loss_dict["loss"].mean()
 
