@@ -32,7 +32,9 @@ class Nav2dDataset(Dataset):
         context_size: int,
         goal_count: int,
         max_step_distance: float,
-        max_angular_drift: float
+        max_angular_drift: float,
+        normalize: bool = True,
+        transform = None,
     ) -> None:
         super().__init__()
         self.size = size
@@ -41,6 +43,8 @@ class Nav2dDataset(Dataset):
         self.goal_count = goal_count
         self.max_step_distance = max_step_distance
         self.max_angular_drift = max_angular_drift
+        self.normalize = normalize
+        self.transform = transform
 
     def __len__(self):
         return self.size
@@ -68,19 +72,24 @@ class Nav2dDataset(Dataset):
         context_images = torch.zeros((self.context_size, 3, self.resolution, self.resolution))
         state = Worldstate.random()
         for i, action in enumerate(context_actions):
-            state.act(action.numpy())
+            state.act(action.numpy(), scale=1.0)
             image = state.render(self.resolution, egocentric=True, egocentric_camera_size=0.2).transpose(2, 0, 1)
-            image = image[0:1].repeat(3, 0)
+            image = image[1:2].repeat(3, 0)
             context_images[i] = torch.from_numpy(image)
 
         goal_images = torch.zeros((self.goal_count, 3, self.resolution, self.resolution))
         for i, action in enumerate(goal_actions):
             temp_state = state.copy()
-            temp_state.act(action.numpy())
+            temp_state.act(action.numpy(), scale=1.0)
             image = temp_state.render(self.resolution, egocentric=True, egocentric_camera_size=0.2).transpose(2, 0, 1)
-            image = image[0:1].repeat(3, 0)
+            image = image[1:2].repeat(3, 0)
             goal_images[i] = torch.from_numpy(image)
 
+        if self.transform is not None:
+            context_images = self.transform(context_images)
+            goal_images = self.transform(goal_images)
+        if self.normalize:
+            goal_actions /= self.max_step_distance
         return context_images, goal_images, torch.cat((goal_actions, torch.zeros((self.goal_count, 1))), dim=-1)
 
 
