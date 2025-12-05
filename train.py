@@ -28,13 +28,13 @@ import matplotlib.pyplot as plt
 import yaml
 
 
-import torch.distributed as dist
-from torch.nn.parallel import DistributedDataParallel as DDP
+# import torch.distributed as dist
+# from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader, ConcatDataset
 from torch.utils.data.distributed import DistributedSampler
-from diffusers.models import AutoencoderKL
+# from diffusers.models import AutoencoderKL
 
-from distributed import init_distributed
+# from distributed import init_distributed
 from models import CDiT_models
 from diffusion import create_diffusion
 from datasets import Nav2dDataset, TrainingDataset
@@ -65,18 +65,18 @@ def requires_grad(model, flag=True):
         p.requires_grad = flag
 
 
-def cleanup():
-    """
-    End DDP training.
-    """
-    dist.destroy_process_group()
+# def cleanup():
+#     """
+#     End DDP training.
+#     """
+#     dist.destroy_process_group()
 
 
 def create_logger(logging_dir):
     """
     Create a logger that writes to a log file and stdout.
     """
-    if dist.get_rank() == 0:  # real logger
+    if True:#dist.get_rank() == 0:  # real logger
         logging.basicConfig(
             level=logging.INFO,
             format='[\033[34m%(asctime)s\033[0m] %(message)s',
@@ -100,11 +100,12 @@ def main(args):
     assert torch.cuda.is_available(), "Training currently requires at least one GPU."
 
     # Setup DDP:
-    _, rank, device, _ = init_distributed()
-    # rank = dist.get_rank()
-    seed = args.global_seed * dist.get_world_size() + rank
+    # _, rank, device, _ = init_distributed()
+    rank = 0#dist.get_rank()
+    device = 'cuda'
+    seed = args.global_seed# * dist.get_world_size() + rank
     torch.manual_seed(seed)
-    print(f"Starting rank={rank}, seed={seed}, world_size={dist.get_world_size()}.")
+    print(f"Starting rank={rank}, seed={seed}, world_size={1}.")
     with open("config/eval_config.yaml", "r") as f:
         default_config = yaml.safe_load(f)
     config = default_config
@@ -185,7 +186,7 @@ def main(args):
     # ~40% speedup but might leads to worse performance depending on pytorch version
     if args.torch_compile:
         model = torch.compile(model)
-    model = DDP(model, device_ids=[device])
+    # model = DDP(model, device_ids=[device])
     diffusion = create_diffusion(timestep_respacing="")  # default: 1000 steps, linear noise schedule
     logger.info(f"CDiT Parameters: {sum(p.numel() for p in model.parameters()):,}")
 
@@ -244,30 +245,32 @@ def main(args):
         resolution=config['image_size'],
         context_size=config['context_size'],
         goal_count=4,
-        max_step_distance=0.01,
-        max_angular_drift=torch.pi
+        max_step_distance=0.05,
+        max_angular_drift=torch.pi,
+        transform=transform
     )
     test_dataset = Nav2dDataset(
         size=100,
         resolution=config['image_size'],
         context_size=config['context_size'],
         goal_count=4,
-        max_step_distance=0.01,
-        max_angular_drift=torch.pi
+        max_step_distance=0.05,
+        max_angular_drift=torch.pi,
+        transform=transform
     )
 
-    sampler = DistributedSampler(
-        train_dataset,
-        num_replicas=dist.get_world_size(),
-        rank=rank,
-        shuffle=True,
-        seed=args.global_seed
-    )
+    # sampler = DistributedSampler(
+    #     train_dataset,
+    #     num_replicas=dist.get_world_size(),
+    #     rank=rank,
+    #     shuffle=True,
+    #     seed=args.global_seed
+    # )
     loader = DataLoader(
         train_dataset,
         batch_size=config['batch_size'],
         shuffle=False,
-        sampler=sampler,
+        # sampler=sampler,
         num_workers=config['num_workers'],
         pin_memory=True,
         drop_last=True,
@@ -286,7 +289,7 @@ def main(args):
 
     logger.info(f"Training for {args.epochs} epochs...")
     for epoch in range(start_epoch, args.epochs):
-        sampler.set_epoch(epoch)
+        # sampler.set_epoch(epoch)
         logger.info(f"Beginning epoch {epoch}...")
 
         # [...x_context, ...x_goals], xy action, relative timeskip
@@ -331,7 +334,7 @@ def main(args):
                 scaler.step(opt)
                 scaler.update()
             
-            update_ema(ema, model.module)
+            update_ema(ema, model)
 
             # Log loss values:
             running_loss += loss.detach().item()
@@ -342,11 +345,11 @@ def main(args):
                 torch.cuda.synchronize()
                 end_time = time()
                 steps_per_sec = log_steps / (end_time - start_time)
-                samples_per_sec = dist.get_world_size()*x_context.shape[0]*steps_per_sec
+                samples_per_sec = x_context.shape[0]*steps_per_sec#*dist.get_world_size()
                 # Reduce loss history over all processes:
-                avg_loss = torch.tensor(running_loss / log_steps, device=device)
-                dist.all_reduce(avg_loss, op=dist.ReduceOp.SUM)
-                avg_loss = avg_loss.item() / dist.get_world_size()
+                avg_loss = torch.tensor(running_loss / log_steps, device=device).sum()
+                # dist.all_reduce(avg_loss, op=dist.ReduceOp.SUM)
+                avg_loss = avg_loss.item()# / dist.get_world_size()
                 logger.info(f"(step={train_steps:07d}) Train Loss: {avg_loss:.4f}, Train Steps/Sec: {steps_per_sec:.2f}, Samples/Sec: {samples_per_sec:.2f}")
                 # Reset monitoring variables:
                 running_loss = 0
@@ -357,7 +360,7 @@ def main(args):
             if train_steps % args.ckpt_every == 0 and train_steps > 0:
                 if rank == 0:
                     checkpoint = {
-                        "model": model.module.state_dict(),
+                        "model": model.state_dict(),
                         "ema": ema.state_dict(),
                         "opt": opt.state_dict(),
                         "args": args,
@@ -366,8 +369,9 @@ def main(args):
                     }
                     if bfloat_enable:
                         checkpoint.update({"scaler": scaler.state_dict()})
-                    checkpoint_path = f"{checkpoint_dir}/latest.pth.tar"
+                    checkpoint_path = f"{checkpoint_dir}/{epoch}.pth.tar"
                     torch.save(checkpoint, checkpoint_path)
+                    torch.save(checkpoint, f"{checkpoint_dir}/latest.pth.tar")
                     if train_steps % (10*args.ckpt_every) == 0 and train_steps > 0:
                         checkpoint_path = f"{checkpoint_dir}/{train_steps:07d}.pth.tar"
                         torch.save(checkpoint, checkpoint_path)
@@ -377,7 +381,7 @@ def main(args):
                 eval_start_time = time()
                 save_dir = os.path.join(experiment_dir, str(train_steps))
                 sim_score = evaluate(ema, tokenizer, diffusion, test_dataset, rank, config["batch_size"], config["num_workers"], latent_size, device, save_dir, args.global_seed, bfloat_enable, num_cond)
-                dist.barrier()
+                # dist.barrier()
                 eval_end_time = time()
                 eval_time = eval_end_time - eval_start_time
                 logger.info(f"(step={train_steps:07d}) Perceptual Loss: {sim_score:.4f}, Eval Time: {eval_time:.2f}")
@@ -386,23 +390,23 @@ def main(args):
     # do any sampling/FID calculation/etc. with ema (or model) in eval mode ...
 
     logger.info("Done!")
-    cleanup()
+    # cleanup()
 
 
 @torch.no_grad
 def evaluate(model, vae, diffusion, test_dataloaders, rank, batch_size, num_workers, latent_size, device, save_dir, seed, bfloat_enable, num_cond):
-    sampler = DistributedSampler(
-        test_dataloaders,
-        num_replicas=dist.get_world_size(),
-        rank=rank,
-        shuffle=True,
-        seed=seed
-    )
+    # sampler = DistributedSampler(
+    #     test_dataloaders,
+    #     num_replicas=dist.get_world_size(),
+    #     rank=rank,
+    #     shuffle=True,
+    #     seed=seed
+    # )
     loader = DataLoader(
         test_dataloaders,
         batch_size=batch_size,
         shuffle=False,
-        sampler=sampler,
+        # sampler=sampler,
         num_workers=num_workers,
         pin_memory=True,
         drop_last=True
@@ -417,7 +421,7 @@ def evaluate(model, vae, diffusion, test_dataloaders, rank, batch_size, num_work
     for x_context, x_goals, actions in loader:
         x = torch.cat((x_context, x_goals), dim=1).to(device)
         y = actions.to(device)
-        rel_t = torch.ones_like(actions.shape[:2]).to(device).flatten(0, 1)
+        rel_t = torch.ones(actions.shape[:2]).to(device).flatten(0, 1)
         with torch.amp.autocast('cuda', enabled=True, dtype=torch.bfloat16):
             B, T = x.shape[:2]
             num_goals = T - num_cond
@@ -442,8 +446,8 @@ def evaluate(model, vae, diffusion, test_dataloaders, rank, batch_size, num_work
             plt.savefig(f'{save_dir}/{i}.png')
             plt.close()
 
-    dist.all_reduce(score)
-    dist.all_reduce(n_samples)
+    # dist.all_reduce(score)
+    # dist.all_reduce(n_samples)
     sim_score = score/n_samples
     return sim_score
 
