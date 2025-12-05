@@ -37,7 +37,7 @@ from torch.utils.data.distributed import DistributedSampler
 # from distributed import init_distributed
 from models import CDiT_models
 from diffusion import create_diffusion
-from datasets import Nav2dDataset, TrainingDataset
+from datasets import Nav2dOrthoDataset, TrainingDataset
 from misc import transform
 
 #################################################################################
@@ -240,7 +240,7 @@ def main(args):
     # train_dataset = ConcatDataset(train_dataset)
     # test_dataset = ConcatDataset(test_dataset)
 
-    train_dataset = Nav2dDataset(
+    train_dataset = Nav2dOrthoDataset(
         size=1000,
         resolution=config['image_size'],
         context_size=config['context_size'],
@@ -249,7 +249,7 @@ def main(args):
         max_angular_drift=torch.pi,
         transform=transform
     )
-    test_dataset = Nav2dDataset(
+    test_dataset = Nav2dOrthoDataset(
         size=100,
         resolution=config['image_size'],
         context_size=config['context_size'],

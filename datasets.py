@@ -12,21 +12,22 @@ import numpy as np
 import torch
 import os
 from PIL import Image
-from typing import Tuple
+from typing import Callable, Tuple
 import yaml
 import pickle
 import tqdm
 from torch.utils.data import Dataset
-from experiment.nav2d import Worldstate
+from experiment import nav2d
 from misc import angle_difference, get_data_path, get_delta_np, normalize_data, to_local_coords
 
 
-class Nav2dDataset(Dataset):
+class BaseNav2dDataset(Dataset):
     """
     Randomly samples trajectories and actions in the Nav2d environment at indexing time.
     """
     def __init__(
         self,
+        nav2d_random: Callable[[], nav2d.Nav2dState],
         size: int,
         resolution: int,
         context_size: int,
@@ -37,6 +38,7 @@ class Nav2dDataset(Dataset):
         transform = None,
     ) -> None:
         super().__init__()
+        self.nav2d_random = nav2d_random
         self.size = size
         self.resolution = resolution
         self.context_size = context_size
@@ -70,19 +72,18 @@ class Nav2dDataset(Dataset):
             (goal_action_directions.cos(), goal_action_directions.sin()), dim=1)
 
         context_images = torch.zeros((self.context_size, 3, self.resolution, self.resolution))
-        state = Worldstate.random()
+
+        state = self.nav2d_random()
         for i, action in enumerate(context_actions):
-            state.act(action.numpy(), scale=1.0)
-            image = state.render(self.resolution, egocentric=True, egocentric_camera_size=0.2).transpose(2, 0, 1)
-            image = image[1:2].repeat(3, 0)
+            state.act(action.numpy())
+            image = state.render(self.resolution).transpose(2, 0, 1)
             context_images[i] = torch.from_numpy(image)
 
         goal_images = torch.zeros((self.goal_count, 3, self.resolution, self.resolution))
         for i, action in enumerate(goal_actions):
             temp_state = state.copy()
-            temp_state.act(action.numpy(), scale=1.0)
-            image = temp_state.render(self.resolution, egocentric=True, egocentric_camera_size=0.2).transpose(2, 0, 1)
-            image = image[1:2].repeat(3, 0)
+            temp_state.act(action.numpy())
+            image = temp_state.render(self.resolution).transpose(2, 0, 1)
             goal_images[i] = torch.from_numpy(image)
 
         if self.transform is not None:
@@ -91,6 +92,42 @@ class Nav2dDataset(Dataset):
         if self.normalize:
             goal_actions /= self.max_step_distance
         return context_images, goal_images, torch.cat((goal_actions, torch.zeros((self.goal_count, 1))), dim=-1)
+
+
+class Nav2dOrthoDataset(BaseNav2dDataset):
+    """
+    Randomly samples trajectories and actions in the nav2dOrtho environment at indexing time.
+    """
+    def __init__(
+        self,
+        size: int,
+        resolution: int,
+        context_size: int,
+        goal_count: int,
+        max_step_distance: float,
+        max_angular_drift: float,
+        normalize: bool = True,
+        transform = None,
+    ) -> None:
+        super().__init__(nav2d.Ortho.random, size, resolution, context_size, goal_count, max_step_distance, max_angular_drift, normalize, transform)
+
+
+class Nav2dTopoDataset(BaseNav2dDataset):
+    """
+    Randomly samples trajectories and actions in the nav2dOrtho environment at indexing time.
+    """
+    def __init__(
+        self,
+        size: int,
+        resolution: int,
+        context_size: int,
+        goal_count: int,
+        max_step_distance: float,
+        max_angular_drift: float,
+        normalize: bool = True,
+        transform = None,
+    ) -> None:
+        super().__init__(nav2d.Topo.random, size, resolution, context_size, goal_count, max_step_distance, max_angular_drift, normalize, transform)
 
 
 class BaseDataset(Dataset):
