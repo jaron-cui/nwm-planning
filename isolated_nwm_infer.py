@@ -17,7 +17,7 @@ from diffusion import create_diffusion
 from diffusers.models import AutoencoderKL
 
 import misc
-import distributed as dist
+# import distributed as dist
 from models import CDiT_models
 from datasets import EvalDataset
 from PIL import Image
@@ -76,7 +76,7 @@ def model_forward_wrapper(all_models, curr_obs, curr_delta, num_timesteps, laten
             rel_t *= num_timesteps
 
         x = x.flatten(0,1)
-        x = vae.encode(x).latent_dist.sample().mul_(0.18215).unflatten(0, (B, T))
+        x = vae.encode(x).unflatten(0, (B, T))
         x_cond = x[:, :num_cond].unsqueeze(1).expand(B, num_goals, num_cond, x.shape[2], x.shape[3], x.shape[4]).flatten(0, 1)
         z = torch.randn(B*num_goals, 4, latent_size, latent_size, device=device)
         y = y.flatten(0, 1)
@@ -84,7 +84,7 @@ def model_forward_wrapper(all_models, curr_obs, curr_delta, num_timesteps, laten
         samples = diffusion.p_sample_loop(
                 model.forward, z.shape, z, clip_denoised=False, model_kwargs=model_kwargs, progress=progress, device=device
         )
-        samples = vae.decode(samples / 0.18215).sample
+        samples = vae.decode(samples)
 
         return torch.clip(samples, -1., 1.)
 
