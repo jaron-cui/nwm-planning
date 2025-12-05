@@ -216,8 +216,8 @@ class CenterCropAR:
     def __init__(self, ar: float = IMAGE_ASPECT_RATIO):
         self.ar = ar
 
-    def __call__(self, img: Image.Image):
-        w, h = img.size
+    def __call__(self, img: torch.Tensor):
+        w, h = img.shape[-2:]
         if w > h:
             img = TF.center_crop(img, (h, int(h * self.ar)))
         else:
@@ -225,9 +225,9 @@ class CenterCropAR:
         return img
 
 transform = transforms.Compose([
-    CenterCropAR(),
-    transforms.Resize((224, 224)),
-    transforms.ToTensor(),
+    # CenterCropAR(),
+    # transforms.Resize((64, 64)),
+    # transforms.ToTensor(),
     transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5], inplace=True),
 ])
 
