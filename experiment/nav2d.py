@@ -8,11 +8,11 @@ import numpy as np
 
 
 class Topo:
-  def __init__(self, seed: int, terrain_size: int, wall_height: float, noise_resolution: float) -> None:
+  def __init__(self, seed: int, terrain_size: int, wall_height: float, noise_resolution: float, avatar_width: float) -> None:
     self.seed = seed
     self.terrain_size = terrain_size
     self.wall_height = wall_height
-    self.noise_resolution = noise_resolution
+    self.avatar_width = avatar_width
 
     rng = np.random.Generator(np.random.PCG64(seed))
     self.terrain = sample_2d_perlin_noise_region(
@@ -24,25 +24,27 @@ class Topo:
     )
     self.position = np.full(2, terrain_size / 2) + rng.random(2) - 0.5
 
-  def copy(self) -> 'Topo':
-    new_state = Topo(self.seed, self.terrain_size, self.wall_height, self.noise_resolution)
-    new_state.position = self.position.copy()
-    return new_state
-
   @staticmethod
   def random(
     terrain_size: int = 256,
     wall_height: float = 0.52,
     noise_resolution: float = 15,
+    avatar_width: float = 0.5,
     avoid_wall_start: bool = True
   ) -> 'Topo':
-    state = Topo(np.random.randint(0, 2**31), terrain_size, wall_height, noise_resolution)
-    while avoid_wall_start and state.terrain[int(state.position.round()[1]), int(state.position.round()[0])] >= wall_height:
-      state = Topo(np.random.randint(0, 2**31), terrain_size, wall_height, noise_resolution)
+    state = Topo(np.random.randint(0, 2**31), terrain_size, wall_height, noise_resolution, avatar_width)
+    r = avatar_width / 2
+    while avoid_wall_start and any([state.terrain[int((state.position[1] + yo).round()), int((state.position[0] + xo).round())] >= wall_height for xo, yo in [[0, 0], [r, r], [r, -r], [-r, r], [-r, r]]]):
+      state = Topo(np.random.randint(0, 2**31), terrain_size, wall_height, noise_resolution, avatar_width)
     return state
 
   def act(self, action: np.ndarray):
-    ray_origin = self.position
+    r = self.avatar_width / 2
+    corners = self.position[None, :] + np.array([[0, 0], [r, r], [r, -r], [-r, r], [-r, r]])
+    action_progression = np.stack([self._cast_ray(ray_origin=corner, action=action) for corner in corners]).min(0)
+    self.position += action_progression * action
+
+  def _cast_ray(self, ray_origin: np.ndarray, action: np.ndarray) -> np.ndarray:
     first_edges = np.ceil(ray_origin - 0.5) * (action >= 0) + np.floor(ray_origin - 0.5) * (action < 0) + 0.5  # edges are on 0.5 grid offset instead of integers
     check_blocks_for_collision = []
     for axis, counteraxis in [(0, 1), (1, 0)]:
@@ -58,17 +60,17 @@ class Topo:
 
     starting_block = ray_origin.round().astype(np.int32)
     altitude = self.terrain[starting_block[1], starting_block[0]]
-    truncated_action = np.zeros(2)
+    action_progressions = np.zeros(2)
     collision = np.zeros(2, dtype=np.bool)
     for action_progression, axis, block_coordinates in check_blocks_for_collision:
       next_altitude = self.terrain[block_coordinates[1], block_coordinates[0]]
       if next_altitude >= altitude and next_altitude >= self.wall_height:
         collision[axis] = True
       if not collision[axis]:
-         truncated_action[axis] = action_progression * action[axis]
+         action_progressions[axis] = action_progression
       altitude = next_altitude
-    truncated_action[~collision] = action[~collision]
-    self.position += truncated_action
+    action_progressions[~collision] = 1
+    return action_progressions
 
   def render(self, camera_size: int) -> np.ndarray:
     corner1 = self.position - camera_size / 2
