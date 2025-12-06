@@ -45,6 +45,7 @@ class Topo:
     self.position += action_progression * action
 
   def _cast_ray(self, ray_origin: np.ndarray, action: np.ndarray) -> np.ndarray:
+    # find all the block coordinates with which the line segment trajectory intersects
     first_edges = np.ceil(ray_origin - 0.5) * (action >= 0) + np.floor(ray_origin - 0.5) * (action < 0) + 0.5  # edges are on 0.5 grid offset instead of integers
     check_blocks_for_collision = []
     for axis, counteraxis in [(0, 1), (1, 0)]:
@@ -58,18 +59,35 @@ class Topo:
         check_blocks_for_collision.append((action_progression, axis, block_coordinates))
     check_blocks_for_collision = sorted(check_blocks_for_collision, key=lambda c: c[0])
 
+    # check blocks for collision (altitude-based)
     starting_block = ray_origin.round().astype(np.int32)
     altitude = self.terrain[starting_block[1], starting_block[0]]
     action_progressions = np.zeros(2)
     collision = np.zeros(2, dtype=np.bool)
+    # - action progression is a 0 to 1 value indicating the relative point within the action at which
+    # the collision occurs. i.e. if the action is 5 blocks in the x direction but the avatar hits a solid
+    # surface in 3 blocks, the action progression associated with that collision is 3/5 = 0.6.
+    # - axis is 0 or 1, indicating the axis along which the collision occurs. (0, 1) <-> (x, y)
+    # - block_coordinates is a np.array([x, y])
     for action_progression, axis, block_coordinates in check_blocks_for_collision:
       next_altitude = self.terrain[block_coordinates[1], block_coordinates[0]]
       if next_altitude >= altitude and next_altitude >= self.wall_height:
         collision[axis] = True
-      if not collision[axis]:
-         action_progressions[axis] = action_progression
+        break
+      action_progressions[axis] = action_progression
       altitude = next_altitude
-    action_progressions[~collision] = 1
+    # if a collision occurs on one axis, the trajectory is redirected to slide against the edge.
+    # so, a new ray needs to be cast in the new direction. fixed this bug when I noticed missed
+    # collision checks in cases of running against a wall!
+    if collision.any():
+      assert not collision.all()  # only one axis collision will have been registered thus far.
+      collision_point = action_progressions[collision] * action + ray_origin
+      subaction = action - action_progressions[collision] * action
+      subaction[collision] = 0
+      subaction_progressions = self._cast_ray(collision_point, subaction)
+      action_progressions[~collision] += subaction_progressions[~collision] * (1 - action_progressions[collision])
+    else:
+      action_progressions[:] = 1
     return action_progressions
 
   def render(self, camera_size: int) -> np.ndarray:
