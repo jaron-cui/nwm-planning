@@ -1,7 +1,7 @@
 run_name: nwm_cdit_s-topo
 
 # training setup
-results_dir: /mnt/d/nwm-out
+results_dir: checkpoints/cdit/res128
 train: True
 batch_size: 8
 num_workers: 4
