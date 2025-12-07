@@ -22,7 +22,7 @@ distance:
 len_traj_pred: 16
 
 # dataset specific parameters
-image_size: 64
+image_size: 128
 datasets:
   nav2d1:
     data_folder: /mnt/d/datasets/nav2d/dataset1
