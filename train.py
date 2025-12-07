@@ -37,7 +37,7 @@ from torch.utils.data.distributed import DistributedSampler
 # from distributed import init_distributed
 from models import CDiT_models
 from diffusion import create_diffusion
-from datasets import Nav2dOrthoDataset, TrainingDataset
+from datasets import Nav2dOrthoDataset, Nav2dTopoDataset, TrainingDataset
 from misc import transform
 
 #################################################################################
@@ -128,7 +128,7 @@ def main(args):
     # Create model:
     # tokenizer = AutoencoderKL.from_pretrained(f"stabilityai/sd-vae-ft-ema").to(device)
     tokenizer = make_vae().to(device)
-    tokenizer.load_state_dict(torch.load('checkpoints/vae/check57.pt'))
+    tokenizer.load_state_dict(torch.load('checkpoints/vae/topo/check59.pt'))
     latent_size = config['image_size'] // 8
 
     assert config['image_size'] % 8 == 0, "Image size must be divisible by 8 (for the VAE encoder)."
@@ -240,21 +240,21 @@ def main(args):
     # train_dataset = ConcatDataset(train_dataset)
     # test_dataset = ConcatDataset(test_dataset)
 
-    train_dataset = Nav2dOrthoDataset(
+    train_dataset = Nav2dTopoDataset(
         size=1000,
         resolution=config['image_size'],
         context_size=config['context_size'],
         goal_count=4,
-        max_step_distance=0.05,
+        max_step_distance=8,
         max_angular_drift=torch.pi,
         transform=transform
     )
-    test_dataset = Nav2dOrthoDataset(
+    test_dataset = Nav2dTopoDataset(
         size=100,
         resolution=config['image_size'],
         context_size=config['context_size'],
         goal_count=4,
-        max_step_distance=0.05,
+        max_step_distance=8,
         max_angular_drift=torch.pi,
         transform=transform
     )

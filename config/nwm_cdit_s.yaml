@@ -1,4 +1,4 @@
-run_name: nwm_cdit_s-test2
+run_name: nwm_cdit_s-topo
 
 # training setup
 results_dir: /mnt/d/nwm-out
@@ -6,7 +6,7 @@ train: True
 batch_size: 8
 num_workers: 4
 model: CDiT-S/2
-lr: 8e-5
+lr: 2e-5
 
 # normalization for the action space
 normalize: True

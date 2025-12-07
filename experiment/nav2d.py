@@ -8,21 +8,46 @@ import numpy as np
 
 
 class Topo:
-  def __init__(self, seed: int, terrain_size: int, wall_height: float, noise_resolution: float, avatar_width: float) -> None:
+  def __init__(
+    self,
+    seed: int,
+    terrain_size: int,
+    wall_height: float,
+    noise_resolution: float,
+    avatar_width: float,
+    terrain: np.ndarray | None = None,
+    position: np.ndarray | None = None
+  ) -> None:
     self.seed = seed
     self.terrain_size = terrain_size
     self.wall_height = wall_height
+    self.noise_resolution = noise_resolution
     self.avatar_width = avatar_width
 
-    rng = np.random.Generator(np.random.PCG64(seed))
-    self.terrain = sample_2d_perlin_noise_region(
-      rng,
-      np.zeros(2),
-      np.full(2, terrain_size - 1),
-      (terrain_size, terrain_size),
-      noise_resolution
+    if terrain is None or position is None:
+      rng = np.random.Generator(np.random.PCG64(seed))
+      self.terrain = sample_2d_perlin_noise_region(
+        rng,
+        np.zeros(2),
+        np.full(2, terrain_size - 1),
+        (terrain_size, terrain_size),
+        noise_resolution
+      )
+      self.position = np.full(2, terrain_size / 2) + rng.random(2) - 0.5
+    else:
+      self.terrain = terrain
+      self.position = position
+
+  def copy(self) -> 'Topo':
+    return Topo(
+      self.seed,
+      self.terrain_size,
+      self.wall_height,
+      self.noise_resolution,
+      self.avatar_width,
+      self.terrain.copy(),
+      self.position.copy()
     )
-    self.position = np.full(2, terrain_size / 2) + rng.random(2) - 0.5
 
   @staticmethod
   def random(
