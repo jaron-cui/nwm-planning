@@ -128,7 +128,7 @@ def main(args):
     # Create model:
     # tokenizer = AutoencoderKL.from_pretrained(f"stabilityai/sd-vae-ft-ema").to(device)
     tokenizer = make_vae().to(device)
-    tokenizer.load_state_dict(torch.load('checkpoints/vae/topo/check59.pt'))
+    tokenizer.load_state_dict(torch.load('checkpoints/vae/topo/check1249.pt'))
     latent_size = config['image_size'] // 8
 
     assert config['image_size'] % 8 == 0, "Image size must be divisible by 8 (for the VAE encoder)."
