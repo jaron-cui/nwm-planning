@@ -7,16 +7,18 @@ from typing import List, Tuple
 import numpy as np
 
 
-CENTERPOINT_PATTERN = np.array([
-    [0.0, 0.1, 0.125, 0.25, 0.25, 0.125, 0.1, 0.0],
-    [0.1, 0.25, 0.375, 0.5, 0.5, 0.375, 0.25, 0.1],
-    [0.125, 0.375, 0.5, 0.8, 0.8, 0.5, 0.375, 0.125],
-    [0.25, 0.5, 0.8, 1.0, 1.0, 0.8, 0.5, 0.25],
-    [0.25, 0.5, 0.8, 1.0, 1.0, 0.8, 0.5, 0.25],
-    [0.125, 0.375, 0.5, 0.8, 0.8, 0.5, 0.375, 0.125],
-    [0.1, 0.25, 0.375, 0.5, 0.5, 0.375, 0.25, 0.1],
-    [0.0, 0.1, 0.125, 0.25, 0.25, 0.125, 0.1, 0.0],
-])
+def circle_mask(width: int, circle_radius: float) -> np.ndarray:
+  array = np.zeros((width, width), dtype=np.bool)
+  center = np.full(2, width / 2)
+  for y in range(width):
+    for x in range(width):
+      pos = np.array([x, y]) + 0.5
+      if np.linalg.norm(pos - center) <= circle_radius:
+        array[y, x] = True
+  return array
+
+
+CENTERPOINT_PATTERN = circle_mask(16, 8)
 
 
 class Topo:
@@ -144,10 +146,14 @@ class Topo:
       + bl * (1 - x_offset) * y_offset
       + br * x_offset * y_offset
     )
-    centerpoint_mask = np.zeros_like(antialiased[:, :, 0])
+    centerpoint_mask = np.zeros_like(antialiased[:, :, 0], dtype=np.bool)
     c = camera_size // 2
-    centerpoint_mask[c - 3:c + 5, c - 3:c + 5] = CENTERPOINT_PATTERN
-    return np.stack((antialiased[:, :, 0] * (1 - centerpoint_mask), antialiased[:, :, 1], antialiased[:, :, 2] * (1 - centerpoint_mask)), axis=2)
+    centerpoint_mask[c - 7:c + 9, c - 7:c + 9] = CENTERPOINT_PATTERN
+    return np.stack((
+      antialiased[:, :, 0],
+      antialiased[:, :, 1],
+      antialiased[:, :, 2] * ~centerpoint_mask + centerpoint_mask
+    ), axis=2).clip(0, 1)
   
   def _augment_altitude_render(self, region) -> np.ndarray:
      return np.stack((region, region * (region < self.wall_height), region * (region < self.wall_height)), axis=2)
