@@ -1,7 +1,9 @@
 # adapted from https://github.com/kpandey008/DiffuseVAE
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from misc import transform, unnormalize
 
 
 def parse_layer_string(s):
@@ -277,3 +279,12 @@ def make_vae():
     bottleneck_channels=4,
     image_channels=3
   )
+
+@torch.no_grad()
+def encode_image(vae, image: np.ndarray) -> torch.Tensor:
+  x_cond_pixels = transform(torch.from_numpy(image.copy()).permute(2, 0, 1)).unsqueeze(0).to(device, dtype=torch.float32)
+  return vae.encode(x_cond_pixels)[0]
+
+@torch.no_grad()
+def decode_latents(vae, latents: torch.Tensor) -> np.ndarray:
+    return unnormalize(vae.decode(latents)).detach().cpu().permute(0, 2, 3, 1).to(dtype=torch.float32).numpy().astype(np.float32)
