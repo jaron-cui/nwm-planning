@@ -6,7 +6,6 @@ torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
 
 from diffusion import create_diffusion
-from misc import transform, unnormalize
 from models import CDiT_models
 
 def load_cdit(checkpoint_path: str) -> Callable[[Sequence[torch.Tensor], Sequence[np.ndarray]], torch.Tensor]:
@@ -38,7 +37,7 @@ def load_cdit(checkpoint_path: str) -> Callable[[Sequence[torch.Tensor], Sequenc
   @torch.no_grad()
   def cdit_forward(latents: torch.Tensor, actions: np.ndarray, progress: bool = False):
     y = torch.cat((torch.tensor(actions), torch.zeros((*actions.shape[:-1], 1))), dim=-1).to(device)
-    with torch.amp.autocast('cuda', enabled=True, dtype=torch.bfloat16):
+    with torch.amp.autocast('cuda', enabled=True, dtype=torch.bfloat16):  # type: ignore
       z = torch.randn(1, 4, latent_size, latent_size, device=device)
       y = y.flatten(0, 1)
       model_kwargs = dict(y=y, x_cond=latents.unsqueeze(0), rel_t=torch.ones(1, device=device))      

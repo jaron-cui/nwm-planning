@@ -281,7 +281,7 @@ def make_vae():
   )
 
 @torch.no_grad()
-def encode_image(vae, image: np.ndarray) -> torch.Tensor:
+def encode_image(vae: VAE, image: np.ndarray, device: str = 'cuda') -> torch.Tensor:
   x_cond_pixels = transform(torch.from_numpy(image.copy()).permute(2, 0, 1)).unsqueeze(0).to(device, dtype=torch.float32)
   return vae.encode(x_cond_pixels)[0]
 
