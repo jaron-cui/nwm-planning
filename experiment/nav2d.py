@@ -110,7 +110,7 @@ class Topo:
     # - block_coordinates is a np.array([x, y])
     for action_progression, axis, block_coordinates in check_blocks_for_collision:
       next_altitude = self.terrain[block_coordinates[1], block_coordinates[0]]
-      if next_altitude >= altitude and next_altitude >= self.wall_height:
+      if next_altitude >= self.wall_height:
         collision[axis] = True
         break
       action_progressions[axis] = action_progression
